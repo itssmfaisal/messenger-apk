@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.outlined.Logout
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+// ...existing code...
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -30,9 +31,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import com.otaworkstation.messenger.util.UrlUtils
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import android.widget.Toast
+import com.otaworkstation.messenger.util.checkUrlStatus
+import com.otaworkstation.messenger.util.rememberAuthImageLoader
 import com.otaworkstation.messenger.data.model.ConversationDTO
 import com.otaworkstation.messenger.ui.theme.*
 
@@ -224,9 +234,11 @@ fun ConversationListScreen(
             } else {
                 LazyColumn {
                     items(conversations) { conversation ->
-                        ConversationItem(conversation) {
-                            onConversationClick(conversation.partner)
-                        }
+                                        ConversationItem(
+                                            conversation,
+                                            onClick = { onConversationClick(conversation.partner) },
+                                            onProfileClick = { onProfileClick() }
+                                        )
                     }
                 }
             }
@@ -237,7 +249,8 @@ fun ConversationListScreen(
 @Composable
 fun ConversationItem(
     conversation: ConversationDTO,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onProfileClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -254,16 +267,46 @@ fun ConversationItem(
             // If the conversation provides a partnerProfilePictureUrl, load it with Coil; otherwise show placeholder
             val context = LocalContext.current
             val imageUrl = UrlUtils.resolveMediaUrl(conversation.partnerProfilePictureUrl)
+            val authLoader = rememberAuthImageLoader()
+            val scope = rememberCoroutineScope()
             if (!imageUrl.isNullOrBlank()) {
-                AsyncImage(
+                SubcomposeAsyncImage(
                     model = ImageRequest.Builder(context).data(imageUrl).crossfade(true).build(),
+                    imageLoader = authLoader,
                     contentDescription = "Avatar for ${conversation.partner}",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onTap = { onProfileClick() },
+                                onLongPress = {
+                                    scope.launch {
+                                        val url = imageUrl
+                                        val status = checkUrlStatus(context, url ?: "")
+                                        val message = if (status.first != null) "URL: $url — HTTP ${status.first}" else "URL: $url — Error: ${status.second}"
+                                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            )
+                        },
+                    contentScale = ContentScale.Crop
+                ) {
+                    val state = painter.state
+                    if (state is coil.compose.AsyncImagePainter.State.Loading) {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.LightGray)) {}
+                    } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                        Box(modifier = Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
+                            Text(text = conversation.partner.take(1).uppercase(), color = Color.White)
+                        }
+                    } else {
+                        SubcomposeAsyncImageContent()
+                    }
+                }
             } else {
                 // Empty placeholder
-                Box(modifier = Modifier.fillMaxSize()) {}
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(text = conversation.partner.take(1).uppercase(), color = Color.White)
+                }
             }
         }
         Spacer(modifier = Modifier.width(16.dp))

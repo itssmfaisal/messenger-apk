@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.otaworkstation.messenger.data.model.Message
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
 import coil.request.ImageRequest
 import androidx.compose.ui.platform.LocalContext
 import com.otaworkstation.messenger.util.UrlUtils
@@ -33,6 +35,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
+import com.otaworkstation.messenger.util.rememberAuthImageLoader
 import com.otaworkstation.messenger.data.model.MessageStatus
 import com.otaworkstation.messenger.ui.theme.*
 
@@ -167,12 +170,35 @@ fun ChatScreen(
         Dialog(onDismissRequest = { viewerImageUrl = null }) {
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 val ctx = LocalContext.current
-                AsyncImage(
+                val authLoader = rememberAuthImageLoader()
+                SubcomposeAsyncImage(
                     model = ImageRequest.Builder(ctx).data(viewerImageUrl).crossfade(true).build(),
+                    imageLoader = authLoader,
                     contentDescription = "Image",
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Fit
-                )
+                ) {
+                    val state = painter.state
+                    when (state) {
+                        is coil.compose.AsyncImagePainter.State.Loading -> {
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {}
+                        }
+                        is coil.compose.AsyncImagePainter.State.Error -> {
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text("Couldn't load image", color = Color.White)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(onClick = { /* retry by resetting viewer; simple refresh */ }, colors = ButtonDefaults.buttonColors(containerColor = PrimaryGreen)) {
+                                        Text("Close", color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                        else -> {
+                            SubcomposeAsyncImageContent()
+                        }
+                    }
+                }
                 IconButton(onClick = { viewerImageUrl = null }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
                     Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                 }
@@ -232,8 +258,10 @@ fun MessageBubble(message: Message, isMe: Boolean, onImageClick: (String) -> Uni
                         when {
                             // Image attachments: show inline preview and allow full-screen tap
                             attachmentType?.startsWith("image") == true || resolved.matches(Regex(".*\\.(png|jpg|jpeg|webp|gif)(\\?.*)?", RegexOption.IGNORE_CASE)) -> {
-                                AsyncImage(
+                                val authLoader = rememberAuthImageLoader()
+                                SubcomposeAsyncImage(
                                     model = ImageRequest.Builder(ctx).data(resolved).crossfade(true).build(),
+                                    imageLoader = authLoader,
                                     contentDescription = message.attachmentName ?: "image",
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -241,7 +269,16 @@ fun MessageBubble(message: Message, isMe: Boolean, onImageClick: (String) -> Uni
                                         .padding(8.dp)
                                         .clickable { onImageClick(resolved) },
                                     contentScale = ContentScale.Crop
-                                )
+                                ) {
+                                    val state = painter.state
+                                    if (state is coil.compose.AsyncImagePainter.State.Loading) {
+                                        Box(modifier = Modifier.fillMaxSize().background(Color.LightGray)) {}
+                                    } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                                        Box(modifier = Modifier.fillMaxSize().background(Color.Gray)) {}
+                                    } else {
+                                        SubcomposeAsyncImageContent()
+                                    }
+                                }
                             }
 
                             // Video attachments: show a tappable thumbnail (here: use AsyncImage for thumbnail if URL points to an image), open external intent on click
@@ -258,12 +295,23 @@ fun MessageBubble(message: Message, isMe: Boolean, onImageClick: (String) -> Uni
                                         ctx.startActivity(intent)
                                     }
                                 ) {
-                                    AsyncImage(
+                                    val authLoader = rememberAuthImageLoader()
+                                    SubcomposeAsyncImage(
                                         model = ImageRequest.Builder(ctx).data(resolved).crossfade(true).build(),
+                                        imageLoader = authLoader,
                                         contentDescription = message.attachmentName ?: "video",
                                         modifier = Modifier.fillMaxSize(),
                                         contentScale = ContentScale.Crop
-                                    )
+                                    ) {
+                                        val state = painter.state
+                                        if (state is coil.compose.AsyncImagePainter.State.Loading) {
+                                            Box(modifier = Modifier.fillMaxSize().background(Color.LightGray)) {}
+                                        } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                                            Box(modifier = Modifier.fillMaxSize().background(Color.Gray)) {}
+                                        } else {
+                                            SubcomposeAsyncImageContent()
+                                        }
+                                    }
                                     Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Play", modifier = Modifier.align(Alignment.Center), tint = Color.White)
                                 }
                             }
