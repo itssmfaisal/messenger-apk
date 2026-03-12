@@ -5,7 +5,6 @@ import com.google.gson.Gson
 import com.otaworkstation.messenger.data.model.Message
 import com.otaworkstation.messenger.data.model.StatusUpdate
 import com.otaworkstation.messenger.util.Constants
-import io.reactivex.Completable
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.disposables.CompositeDisposable
 import io.reactivex.schedulers.Schedulers
@@ -23,58 +22,75 @@ class WebSocketManager(private val token: String) {
     var onErrorReceived: ((String) -> Unit)? = null
 
     fun connect() {
+        // Use wss://.../websocket for STOMP over WebSocket (skipping SockJS wrapper if possible)
         mStompClient = Stomp.over(Stomp.ConnectionProvider.OKHTTP, Constants.WS_URL)
         
         val headers = listOf(StompHeader("Authorization", "Bearer $token"))
         
         mStompClient?.withClientHeartbeat(10000)?.withServerHeartbeat(10000)
 
-        compositeDisposable.add(mStompClient!!.lifecycle()
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe { lifecycleEvent ->
-                when (lifecycleEvent.type) {
-                    ua.naiksoftware.stomp.dto.LifecycleEvent.Type.OPENED -> Log.d("WS", "Stomp connection opened")
-                    ua.naiksoftware.stomp.dto.LifecycleEvent.Type.ERROR -> Log.e("WS", "Error", lifecycleEvent.exception)
-                    ua.naiksoftware.stomp.dto.LifecycleEvent.Type.CLOSED -> Log.d("WS", "Stomp connection closed")
-                    else -> {}
-                }
-            })
+        mStompClient?.lifecycle()?.let { lifecycle ->
+            compositeDisposable.add(lifecycle
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ lifecycleEvent ->
+                    when (lifecycleEvent.type) {
+                        ua.naiksoftware.stomp.dto.LifecycleEvent.Type.OPENED -> {
+                            Log.d("WS", "Stomp connection opened")
+                            join()
+                        }
+                        ua.naiksoftware.stomp.dto.LifecycleEvent.Type.ERROR -> Log.e("WS", "Error", lifecycleEvent.exception)
+                        ua.naiksoftware.stomp.dto.LifecycleEvent.Type.CLOSED -> Log.d("WS", "Stomp connection closed")
+                        else -> {}
+                    }
+                }, {
+                    Log.e("WS", "Lifecycle subscribe error", it)
+                }))
+        }
 
         mStompClient?.connect(headers)
-
         subscribeToQueues()
     }
 
     private fun subscribeToQueues() {
-        compositeDisposable.add(mStompClient!!.topic("/user/queue/messages")
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe({ stompMessage ->
-                val message = gson.fromJson(stompMessage.payload, Message::class.java)
-                onMessageReceived?.invoke(message)
-            }, { throwable ->
-                Log.e("WS", "Error on subscribe messages", throwable)
-            }))
+        mStompClient?.let { client ->
+            compositeDisposable.add(client.topic("/user/queue/messages")
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ stompMessage ->
+                    try {
+                        val message = gson.fromJson(stompMessage.payload, Message::class.java)
+                        onMessageReceived?.invoke(message)
+                    } catch (e: Exception) {
+                        Log.e("WS", "Error parsing message", e)
+                    }
+                }, { throwable ->
+                    Log.e("WS", "Error on subscribe messages", throwable)
+                }))
 
-        compositeDisposable.add(mStompClient!!.topic("/user/queue/status-updates")
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe({ stompMessage ->
-                val update = gson.fromJson(stompMessage.payload, StatusUpdate::class.java)
-                onStatusUpdateReceived?.invoke(update)
-            }, { throwable ->
-                Log.e("WS", "Error on subscribe status", throwable)
-            }))
+            compositeDisposable.add(client.topic("/user/queue/status-updates")
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ stompMessage ->
+                    try {
+                        val update = gson.fromJson(stompMessage.payload, StatusUpdate::class.java)
+                        onStatusUpdateReceived?.invoke(update)
+                    } catch (e: Exception) {
+                        Log.e("WS", "Error parsing status update", e)
+                    }
+                }, { throwable ->
+                    Log.e("WS", "Error on subscribe status", throwable)
+                }))
 
-        compositeDisposable.add(mStompClient!!.topic("/user/queue/errors")
-            .subscribeOn(Schedulers.io())
-            .observeOn(AndroidSchedulers.mainThread())
-            .subscribe({ stompMessage ->
-                onErrorReceived?.invoke(stompMessage.payload)
-            }, { throwable ->
-                Log.e("WS", "Error on subscribe errors", throwable)
-            }))
+            compositeDisposable.add(client.topic("/user/queue/errors")
+                .subscribeOn(Schedulers.io())
+                .observeOn(AndroidSchedulers.mainThread())
+                .subscribe({ stompMessage ->
+                    onErrorReceived?.invoke(stompMessage.payload)
+                }, { throwable ->
+                    Log.e("WS", "Error on subscribe errors", throwable)
+                }))
+        }
     }
 
     fun sendMessage(recipient: String, content: String, attachment: Map<String, Any>? = null) {
@@ -84,7 +100,11 @@ class WebSocketManager(private val token: String) {
         )
         attachment?.let { payload.putAll(it) }
         
-        mStompClient?.send("/app/chat.send", gson.toJson(payload))?.subscribe()
+        mStompClient?.send("/app/chat.send", gson.toJson(payload))?.subscribe({
+            Log.d("WS", "Message sent successfully")
+        }, {
+            Log.e("WS", "Error sending message", it)
+        })
     }
 
     fun markDelivered(messageId: Long) {
@@ -97,7 +117,7 @@ class WebSocketManager(private val token: String) {
         mStompClient?.send("/app/chat.seen", gson.toJson(payload))?.subscribe()
     }
 
-    fun join() {
+    private fun join() {
         mStompClient?.send("/app/chat.join", "")?.subscribe()
     }
 

@@ -7,6 +7,8 @@ import com.otaworkstation.messenger.data.repository.MessengerRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 
 class ConversationsViewModel(private val repository: MessengerRepository) : ViewModel() {
 
@@ -22,7 +24,24 @@ class ConversationsViewModel(private val repository: MessengerRepository) : View
             try {
                 val response = repository.getConversations(0, 50)
                 if (response.isSuccessful) {
-                    _conversations.value = response.body()?.content ?: emptyList()
+                    val convs = response.body()?.content ?: emptyList()
+                    // Enrich conversations with partner profile pictures when available
+                    val enriched = convs.map { conv ->
+                        // Launch an async request for each partner's profile
+                        async {
+                            try {
+                                val profileResp = repository.getUserProfile(conv.partner)
+                                if (profileResp.isSuccessful) {
+                                    val profile = profileResp.body()
+                                    conv.copy(partnerProfilePictureUrl = profile?.profilePictureUrl)
+                                } else conv
+                            } catch (e: Exception) {
+                                conv
+                            }
+                        }
+                    }.awaitAll()
+
+                    _conversations.value = enriched
                 }
             } catch (e: Exception) {
                 // Handle error

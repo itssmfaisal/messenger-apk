@@ -93,6 +93,12 @@ fun MessengerApp(
                 },
                 onProfileClick = {
                     navController.navigate("profile")
+                },
+                onLogout = {
+                    tokenManager.clearToken()
+                    navController.navigate("auth") {
+                        popUpTo(0) { inclusive = true }
+                    }
                 }
             )
         }

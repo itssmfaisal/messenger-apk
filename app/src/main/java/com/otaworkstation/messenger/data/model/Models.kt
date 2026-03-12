@@ -41,7 +41,9 @@ enum class MessageStatus {
 
 data class ConversationDTO(
     val partner: String,
-    val lastMessageAt: String
+    val lastMessageAt: String,
+    // Optional partner profile picture URL provided by the backend. Will be null if unavailable.
+    val partnerProfilePictureUrl: String? = null
 )
 
 data class PaginatedResponse<T>(
