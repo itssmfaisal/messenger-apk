@@ -234,11 +234,20 @@ fun ConversationListScreen(
             } else {
                 LazyColumn {
                     items(conversations) { conversation ->
-                                        ConversationItem(
-                                            conversation,
-                                            onClick = { onConversationClick(conversation.partner) },
-                                            onProfileClick = { onProfileClick() }
-                                        )
+                        ConversationItem(
+                            conversation,
+                            onClick = { onConversationClick(conversation.partner) },
+                            onProfileClick = { onProfileClick() }
+                        )
+                    }
+                    item {
+                        if (viewModel.canLoadMore()) {
+                            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                Button(onClick = { viewModel.loadNextPage() }) {
+                                    Text("Load More")
+                                }
+                            }
+                        }
                     }
                 }
             }

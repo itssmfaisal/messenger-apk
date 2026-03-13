@@ -157,6 +157,15 @@ fun ChatScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
+            item {
+                if (viewModel.canLoadMore()) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Button(onClick = { viewModel.loadNextPage() }) {
+                            Text("Load More")
+                        }
+                    }
+                }
+            }
             items(messages) { message ->
                 MessageBubble(message, isMe = message.sender != partnerUsername, onImageClick = { url ->
                     viewerImageUrl = url

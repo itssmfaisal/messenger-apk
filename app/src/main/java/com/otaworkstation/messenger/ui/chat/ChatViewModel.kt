@@ -24,21 +24,29 @@ class ChatViewModel(
 
     private var webSocketManager: WebSocketManager? = null
 
+    private var currentPage = 0
+    private var pageSize = 20
+    private var lastPage = false
+    private var loadingMore = false
+
     init {
         loadHistory()
         setupWebSocket()
     }
 
-    private fun loadHistory() {
+    fun loadHistory() {
+        currentPage = 0
+        lastPage = false
         viewModelScope.launch {
             _isLoading.value = true
             try {
-                val response = repository.getConversationHistory(partnerUsername, 0, 50)
+                val response = repository.getConversationHistory(partnerUsername, currentPage, pageSize)
                 if (response.isSuccessful) {
-                    val history = response.body()?.content ?: emptyList()
-                    // History is newest first, reverse it for chronological display
+                    val resp = response.body()
+                    val history = resp?.content ?: emptyList()
+                    lastPage = resp?.last ?: true
+                    // History is newest first, reverse for chronological display
                     _messages.value = history.reversed()
-                    
                     // Mark last received message as seen if it's from partner
                     history.firstOrNull { it.sender == partnerUsername }?.let {
                         markSeen(it.id)
@@ -51,6 +59,30 @@ class ChatViewModel(
             }
         }
     }
+
+    fun loadNextPage() {
+        if (lastPage || loadingMore) return
+        loadingMore = true
+        viewModelScope.launch {
+            try {
+                val nextPage = currentPage + 1
+                val response = repository.getConversationHistory(partnerUsername, nextPage, pageSize)
+                if (response.isSuccessful) {
+                    val resp = response.body()
+                    val history = resp?.content ?: emptyList()
+                    lastPage = resp?.last ?: true
+                    // Prepend older messages (reverse for chronological)
+                    _messages.value = history.reversed() + _messages.value
+                    currentPage = nextPage
+                }
+            } catch (e: Exception) {
+                // Handle error
+            } finally {
+                loadingMore = false
+            }
+        }
+    }
+    fun canLoadMore(): Boolean = !lastPage && !loadingMore
 
     private fun setupWebSocket() {
         val token = tokenManager.getToken() ?: return
