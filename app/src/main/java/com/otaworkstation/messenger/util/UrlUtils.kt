@@ -17,14 +17,16 @@ object UrlUtils {
 
         return try {
             val baseUri = URI(Constants.BASE_URL)
-            val origin = StringBuilder().apply {
+            val originWithApi = StringBuilder().apply {
                 append(baseUri.scheme)
                 append("://")
                 append(baseUri.host)
                 if (baseUri.port != -1) append(":").append(baseUri.port)
+                append("/api")
             }.toString()
-
-            if (trimmed.startsWith("/")) origin + trimmed else origin + "/" + trimmed
+            // Always resolve under /api for media files
+            val resolvedUrl = if (trimmed.startsWith("/")) originWithApi + trimmed else originWithApi + "/" + trimmed
+            resolvedUrl
         } catch (e: Exception) {
             // Fallback: just return the original value if parsing fails
             trimmed

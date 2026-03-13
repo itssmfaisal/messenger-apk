@@ -1,4 +1,12 @@
 package com.otaworkstation.messenger.ui.profile
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.SubcomposeAsyncImage
+import coil.compose.SubcomposeAsyncImageContent
+import coil.request.ImageRequest
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -53,6 +61,42 @@ fun ProfileScreen(
             if (isLoading && profile == null) {
                 CircularProgressIndicator()
             } else {
+                    // Profile picture
+                    val imageUrl = com.otaworkstation.messenger.util.UrlUtils.resolveMediaUrl(profile?.profilePictureUrl)
+                    val authLoader = com.otaworkstation.messenger.util.rememberAuthImageLoader()
+                    android.util.Log.d("ProfileScreen", "profilePictureUrl: ${profile?.profilePictureUrl}")
+                    android.util.Log.d("ProfileScreen", "resolved imageUrl: $imageUrl")
+                    Surface(
+                        modifier = Modifier.size(80.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface
+                    ) {
+                        if (!imageUrl.isNullOrBlank()) {
+                            SubcomposeAsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current).data(imageUrl).crossfade(true).build(),
+                                imageLoader = authLoader,
+                                contentDescription = "Profile picture",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            ) {
+                                val state = painter.state
+                                if (state is coil.compose.AsyncImagePainter.State.Loading) {
+                                    Box(modifier = Modifier.fillMaxSize().background(Color.LightGray)) {}
+                                } else if (state is coil.compose.AsyncImagePainter.State.Error) {
+                                    Box(modifier = Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
+                                        Text(text = (profile?.displayName?.take(1)?.uppercase() ?: "?"), color = Color.White)
+                                    }
+                                } else {
+                                    SubcomposeAsyncImageContent()
+                                }
+                            }
+                        } else {
+                            Box(modifier = Modifier.fillMaxSize().background(Color.Gray), contentAlignment = Alignment.Center) {
+                                Text(text = (profile?.displayName?.take(1)?.uppercase() ?: "?"), color = Color.White)
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(
                     value = displayName,
                     onValueChange = { displayName = it },
