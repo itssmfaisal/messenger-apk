@@ -62,5 +62,8 @@ interface MessengerApi {
 
     @Multipart
     @POST("messages/attachment")
-    suspend fun uploadAttachment(@Part file: MultipartBody.Part): Response<AttachmentUploadResponse>
+    suspend fun uploadAttachment(
+        @Header("Authorization") authHeader: String,
+        @Part file: MultipartBody.Part
+    ): Response<AttachmentUploadResponse>
 }

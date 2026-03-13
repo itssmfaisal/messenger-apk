@@ -9,12 +9,71 @@ import com.otaworkstation.messenger.util.TokenManager
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaType
 
 class ChatViewModel(
     private val repository: MessengerRepository,
     private val tokenManager: TokenManager,
     private val partnerUsername: String
 ) : ViewModel() {
+
+    fun sendAttachment(
+        uri: android.net.Uri,
+        name: String?,
+        context: android.content.Context,
+        content: String = "",
+        onComplete: () -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                val bytes = inputStream?.readBytes()
+                inputStream?.close()
+                if (bytes != null) {
+                    val fileName = name ?: "attachment"
+                    // Detect MIME type from URI
+                    var mimeType = context.contentResolver.getType(uri)
+                    if (mimeType == null) mimeType = "application/octet-stream"
+                    val mediaType = mimeType.toMediaType()
+                    val part = okhttp3.MultipartBody.Part.createFormData(
+                        "file",
+                        fileName,
+                        okhttp3.RequestBody.create(mediaType, bytes)
+                    )
+                    val token = tokenManager.getToken() ?: ""
+                    val url = "http://localhost:8080/messages/attachment"
+                    android.util.Log.e("ChatViewModel", "Uploading attachment: URL=$url, fileName=$fileName, mediaType=$mediaType, size=${bytes.size}")
+                    val response = repository.uploadAttachment(token, part)
+                    if (response.isSuccessful) {
+                        val att = response.body()
+                        if (att != null) {
+                            webSocketManager?.sendMessage(
+                                partnerUsername,
+                                content,
+                                mapOf(
+                                    "attachmentUrl" to att.attachmentUrl,
+                                    "attachmentName" to att.attachmentName,
+                                    "attachmentType" to att.attachmentType,
+                                    "attachmentSize" to att.attachmentSize
+                                )
+                            )
+                        } else {
+                            android.util.Log.e("ChatViewModel", "Attachment upload response body is null")
+                        }
+                    } else {
+                        val errorBody = response.errorBody()?.string()
+                        android.util.Log.e("ChatViewModel", "Attachment upload failed: ${response.code()} ${response.message()} Body: $errorBody")
+                    }
+                } else {
+                    android.util.Log.e("ChatViewModel", "Attachment file bytes are null")
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ChatViewModel", "Attachment upload/send error", e)
+            } finally {
+                onComplete()
+            }
+        }
+    }
 
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages = _messages.asStateFlow()

@@ -48,6 +48,23 @@ fun ChatScreen(
 ) {
     val messages by viewModel.messages.collectAsState()
     var textState by remember { mutableStateOf("") }
+    var attachmentUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var attachmentName by remember { mutableStateOf<String?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri: android.net.Uri? ->
+        if (uri != null) {
+            attachmentUri = uri
+            // Try to get file name
+            val cursor = context.contentResolver.query(uri, null, null, null, null)
+            if (cursor != null) {
+                val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && nameIndex >= 0) {
+                    attachmentName = cursor.getString(nameIndex)
+                }
+                cursor.close()
+            }
+        }
+    }
     val listState = rememberLazyListState()
     var selectedTab by remember { mutableIntStateOf(0) }
     var viewerImageUrl by remember { mutableStateOf<String?>(null) }
@@ -101,46 +118,81 @@ fun ChatScreen(
         },
         bottomBar = {
             Surface(tonalElevation = 2.dp, color = White) {
-                Row(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = textState,
-                        onValueChange = { textState = it },
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 48.dp),
-                        placeholder = { Text("Write your message...", color = TextGray.copy(alpha = 0.5f)) },
-                        shape = RoundedCornerShape(24.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = BorderGray,
-                            focusedBorderColor = PrimaryGreen,
-                            unfocusedContainerColor = BackgroundLightGreen.copy(alpha = 0.3f),
-                            focusedContainerColor = BackgroundLightGreen.copy(alpha = 0.3f)
-                        ),
-                        trailingIcon = {
-                            IconButton(onClick = { /* TODO */ }) {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Attachment preview above input row
+                    if (attachmentUri != null && attachmentName != null) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = BackgroundLightGreen,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                                 Icon(Icons.Default.AttachFile, contentDescription = null, tint = TextGray)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(attachmentName ?: "Attachment", color = TextDark, fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                IconButton(onClick = {
+                                    attachmentUri = null
+                                    attachmentName = null
+                                }) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", tint = Color.Red)
+                                }
                             }
-                        },
-                        maxLines = 4
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Surface(
-                        modifier = Modifier.size(48.dp),
-                        shape = CircleShape,
-                        color = PrimaryGreen,
-                        enabled = textState.isNotBlank(),
-                        onClick = {
-                            viewModel.sendMessage(textState)
-                            textState = ""
                         }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = White, modifier = Modifier.size(20.dp))
+                        OutlinedTextField(
+                            value = textState,
+                            onValueChange = { textState = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp),
+                            placeholder = { Text("Write your message...", color = TextGray.copy(alpha = 0.5f)) },
+                            shape = RoundedCornerShape(24.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = BorderGray,
+                                focusedBorderColor = PrimaryGreen,
+                                unfocusedContainerColor = BackgroundLightGreen.copy(alpha = 0.3f),
+                                focusedContainerColor = BackgroundLightGreen.copy(alpha = 0.3f)
+                            ),
+                            trailingIcon = {
+                                IconButton(onClick = {
+                                    launcher.launch("*/*")
+                                }) {
+                                    Icon(Icons.Default.AttachFile, contentDescription = null, tint = TextGray)
+                                }
+                            },
+                            maxLines = 4
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            modifier = Modifier.size(48.dp),
+                            shape = CircleShape,
+                            color = PrimaryGreen,
+                            enabled = textState.isNotBlank() || attachmentUri != null,
+                            onClick = {
+                                val uri = attachmentUri
+                                if (uri is android.net.Uri) {
+                                    val contentToSend = textState
+                                    viewModel.sendAttachment(uri, attachmentName, context, contentToSend) {
+                                        attachmentUri = null
+                                        attachmentName = null
+                                        textState = ""
+                                    }
+                                } else if (textState.isNotBlank()) {
+                                    viewModel.sendMessage(textState)
+                                    textState = ""
+                                }
+                            }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send", tint = White, modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                 }

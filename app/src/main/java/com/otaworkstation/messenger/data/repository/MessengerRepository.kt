@@ -25,5 +25,6 @@ class MessengerRepository(private val api: MessengerApi) {
 
     suspend fun uploadProfilePicture(file: MultipartBody.Part): Response<ProfileDTO> = api.uploadProfilePicture(file)
 
-    suspend fun uploadAttachment(file: MultipartBody.Part): Response<AttachmentUploadResponse> = api.uploadAttachment(file)
+    suspend fun uploadAttachment(token: String, file: MultipartBody.Part): Response<AttachmentUploadResponse> =
+        api.uploadAttachment("Bearer $token", file)
 }
